@@ -57,7 +57,7 @@ env:
   # (or be tampered with) without an auditable, reviewed commit. Bump the SHA
   # via PR whenever the central config changes (see .github/zizmor.md > For maintainers).
   ZIZMOR_CONFIG_REPO: qualcomm/qcom-enterprise-workflows
-  ZIZMOR_CONFIG_REF: REPLACE_WITH_PINNED_COMMIT_SHA
+  ZIZMOR_CONFIG_REF: d53be295ed04539ff040577740c9233772e977fa
   ZIZMOR_CONFIG_PATH: .github/zizmor-enterprise-policy.yml
 
 jobs:
