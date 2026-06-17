@@ -1,9 +1,8 @@
-name: QC Preflight Checks
+name: QC Preflight Checks for pkg-* repos
 
 on:
   pull_request:
   push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:

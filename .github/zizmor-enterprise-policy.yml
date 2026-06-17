@@ -1,0 +1,86 @@
+# =============================================================================
+# Central zizmor policy for the Qualcomm GitHub enterprise.
+#
+# This file is the SINGLE SOURCE OF TRUTH for the org-wide GitHub Actions
+# security gate. It is fetched by .github/workflows/zizmor-scan.yml from a
+# pinned commit SHA and passed to zizmor via `--config` ("global discovery"),
+# which means any repo-local `zizmor.yml` is IGNORED. Teams therefore CANNOT
+# weaken this policy by committing their own config. See .github/zizmor.md.
+#
+# Conventions used below:
+#   * We only list DEVIATIONS from zizmor's built-in defaults. Every audit not
+#     mentioned here still runs with its default severity (including the
+#     supply-chain audits: impostor-commit, known-vulnerable-actions,
+#     ref-confusion, typosquat-uses, cache-poisoning, bot-conditions, ...).
+#   * zizmor severities are: informational < low < medium < high. 
+#     The enterprise ruleset blocks merges on open HIGH alerts, so
+#     `remap.severity: high` == "blocking" and anything below == "advisory".
+#   * `remap.severity` is BLANKET: it re-grades every finding for that audit to
+#     the given level (e.g. high re-grades medium/low findings up to high).
+# =============================================================================
+rules:
+  # --- BLOCKING: the footguns we never want juniors to ship --------------------
+
+  # pull_request_target / workflow_run run with the target repo's secrets and
+  # write token while being triggerable by forks. This is the #1 source of the
+  # insecure workflows we have seen. Force these to HIGH so the gate blocks them.
+  dangerous-triggers:
+    remap:
+      severity: high
+
+  # Code injection via `${{ ... }}` expansion in run: blocks etc. The classic
+  # RCE footgun. Block it. (Under the `regular` persona only genuinely
+  # attacker-influenced expansions are flagged, not every expansion.)
+  template-injection:
+    remap:
+      severity: high
+
+  # Writing attacker-controlled values to GITHUB_ENV / GITHUB_PATH in a
+  # dangerously-triggered workflow is an arbitrary-code-execution vector
+  # (e.g. LD_PRELOAD, PATH shadowing). Block it.
+  github-env:
+    remap:
+      severity: high
+
+  # --- ADVISORY (phase 1): supply-chain action pinning ------------------------
+  # GOAL: eventually require hash-pinning (SHA) for all actions, per the
+  # tj-actions/changed-files incident. For now this is ADVISORY so we don't
+  # block hundreds of teams before we have communicated the requirement and
+  # provided auto-PR tooling (see .github/zizmor.md > sha-pinning rollout).
+  #
+  # PHASE 1 (current): policy = ref-pin (tag/branch pins like @v4 are allowed;
+  #   only fully-mutable refs are flagged) and severity remapped to low so
+  #   findings are VISIBLE in the security tab but DO NOT block merges.
+  # PHASE 2 (after comms + migration window): change every policy below to
+  #   `hash-pin` and delete the `remap` block so findings return to HIGH and
+  #   start blocking. That single change flips enforcement on across the fleet.
+  unpinned-uses:
+    remap:
+      severity: low
+    config:
+      policies:
+        "*": ref-pin
+
+  # --- OPT-IN templates (disabled until you populate them) --------------------
+
+  # Allow/deny specific actions org-wide. This audit does NOTHING until a list
+  # is provided. Uncomment + populate to, e.g., block a known-compromised action
+  # everywhere, or move to an allowlist of vetted actions. Patterns are
+  # repository patterns (owner/repo, owner/*, *). See .github/zizmor.md.
+  # forbidden-uses:
+  #   remap:
+  #     severity: high
+  #   config:
+  #     # Denylist mode: permit everything except these (known-bad example):
+  #     deny:
+  #       - tj-actions/*
+  #     # ...or allowlist mode instead (only these are permitted):
+  #     # allow:
+  #     #   - actions/*
+  #     #   - github/codeql-action/*
+
+  # NOTE: secrets-outside-env is intentionally NOT configured here. As of
+  # zizmor v1.24.0 it only produces findings under the `auditor` persona, which
+  # is too noisy for a blocking enterprise gate. Enabling it here under the
+  # `regular` persona would be a silent no-op. See .github/zizmor.md for how to surface
+  # environment-secret hygiene separately if you want it.

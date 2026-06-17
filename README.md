@@ -1,47 +1,68 @@
-**After repository creation:**
-- [ ] Update this `README.md`. Update the Project Name, description, and all sections. Remove this checklist.
-- [ ] If required, update `LICENSE.txt` and the License section with your project's approved license
-- [ ] Search this repo for "REPLACE-ME" and update all instances accordingly
-- [ ] Update `CONTRIBUTING.md` as needed
-- [ ] Review the workflows in `.github/workflows`, updating as needed. See https://docs.github.com/en/actions for information on what these files do and how they work.
-- [ ] Review and update the suggested Issue and PR templates as needed in `.github/ISSUE_TEMPLATE` and `.github/PULL_REQUEST_TEMPLATE`
+# qcom-enterprise-workflows
 
-# Project Name
+Central home for GitHub Actions workflows that are distributed across the
+Qualcomm GitHub enterprise as **required workflows** and enforced via enterprise
+**rulesets**. These workflows run against *other* repositories in the enterprise;
+there is nothing to copy into your own repository to adopt them.
 
-*\<update with your project name and a short description\>*
+> **GitHub Actions is disabled on this repository** so the central workflows do
+> not self-trigger here. The files are consumed by other repos via enterprise
+> rulesets — they are not meant to run against this repo.
 
-Project that does ... implemented in ... runs on Qualcomm® *\<processor\>*
+## What's here
+
+| Workflow | Purpose |
+| --- | --- |
+| [`.github/workflows/zizmor-scan.yml`](.github/workflows/zizmor-scan.yml) | GitHub Actions security scan ([zizmor](https://github.com/zizmorcore/zizmor)), enforced as a Code Scanning merge gate. See [`.github/zizmor.md`](.github/zizmor.md). |
+| [`.github/workflows/qcom-preflight-checks-for-pkg.yml`](.github/workflows/qcom-preflight-checks-for-pkg.yml) | Preflight checks (license/copyright, dependency review, Semgrep, repolinter, commit email) for `pkg-*` repositories. |
+
+Supporting files:
+
+- [`.github/zizmor-enterprise-policy.yml`](.github/zizmor-enterprise-policy.yml) —
+  the central zizmor policy (single source of truth). It lives outside
+  `.github/workflows/` because GitHub treats every file under `workflows/` as a
+  workflow, and this is a zizmor config, not a workflow.
+- [`.github/zizmor.md`](.github/zizmor.md) — what the zizmor gate does, how to fix
+  findings, and how exceptions work.
+
+## For repositories subject to these checks
+
+You don't need to add anything. The checks appear on your pull requests
+automatically because they are enforced at the enterprise level. To understand a
+specific result:
+
+- **zizmor / security scan** — see [`.github/zizmor.md`](.github/zizmor.md).
+- **preflight checks** — see the
+  [qcom-reusable-workflows](https://github.com/qualcomm/qcom-reusable-workflows)
+  repository, which provides the underlying reusable workflow.
 
 ## Branches
 
-**main**: Primary development branch. Contributors should develop submissions based on this branch, and submit pull requests to this branch.
+**main**: Primary development branch. Contributors should base submissions on this
+branch and open pull requests against it.
 
-## Requirements
+## Maintaining these workflows
 
-List requirements to run the project, how to install them, instructions to use docker container, etc...
+Changes here affect every repository in the enterprise that the corresponding
+ruleset targets. Treat changes carefully:
 
-## Installation Instructions
+- The zizmor policy is fetched by the scan workflow from a **pinned commit SHA**.
+  After changing the policy, bump that pin via pull request. See the maintainer
+  notes in [`.github/zizmor.md`](.github/zizmor.md).
+- Renaming a workflow file changes the path the enterprise ruleset references —
+  coordinate renames with the ruleset owner.
+- See [AGENTS.md](AGENTS.md) for the design constraints and decisions behind these
+  files.
 
-How to install the software itself.
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Usage
+## Getting in contact
 
-Describe how to use the project.
-
-## Development
-
-How to develop new features/fixes for the software. Maybe different than "usage". Also provide details on how to contribute via a [CONTRIBUTING.md file](CONTRIBUTING.md).
-
-## Getting in Contact
-
-How to contact maintainers. E.g. GitHub Issues, GitHub Discussions could be indicated for many cases. However a mail list or list of Maintainer e-mails could be shared for other types of discussions. E.g.
-
-* [Report an Issue on GitHub](../../issues)
-* [Open a Discussion on GitHub](../../discussions)
-* [E-mail us](mailto:REPLACE-ME@qti.qualcomm.com) for general questions
+- [Report an Issue on GitHub](../../issues)
+- [Open a Discussion on GitHub](../../discussions)
 
 ## License
 
-*\<update with your project name and license\>*
-
-*\<REPLACE-ME\>* is licensed under the [BSD-3-clause License](https://spdx.org/licenses/BSD-3-Clause.html). See [LICENSE.txt](LICENSE.txt) for the full license text.
+`qcom-enterprise-workflows` is licensed under the
+[BSD-3-Clause License](https://spdx.org/licenses/BSD-3-Clause.html). See
+[LICENSE.txt](LICENSE.txt) for the full license text.

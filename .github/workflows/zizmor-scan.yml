@@ -1,0 +1,212 @@
+# Enterprise-wide GitHub Actions security scan (zizmor).
+#
+# This workflow is intended to be distributed as an ORGANIZATION / ENTERPRISE
+# "required workflow" and enforced as a merge gate via an enterprise
+# Code Scanning merge-protection ruleset. See .github/zizmor.md for the full
+# operating model and rollout plan.
+#
+# Design notes (see .github/zizmor.md for details):
+#   * The central, trusted zizmor config is checked out from a PINNED COMMIT SHA
+#     of the central repo and passed via `config:` (zizmor "global" discovery).
+#     This makes zizmor IGNORE any repo-local `zizmor.yml`, so a PR cannot weaken
+#     the policy by committing its own config.
+#   * Results are uploaded to GitHub Advanced Security (code scanning). The job
+#     itself does NOT fail on findings; blocking is handled by the enterprise
+#     ruleset, and dismissals are gated behind Security Managers.
+#   * When the run cannot upload to code scanning -- fork pull requests get a
+#     read-only token, or the repo has no GitHub Advanced Security / code
+#     scanning -- the workflow DEGRADES GRACEFULLY: zizmor runs in annotations
+#     mode and writes a job summary instead. Those runs are advisory (visibility
+#     only): they surface findings inline but do not upload SARIF and therefore
+#     do not arm the merge gate. Fork PRs are (re)enforced on the base repo
+#     after merge (the push baseline) and via maintainer review. See zizmor.md.
+name: GitHub Actions Security Scan (zizmor)
+
+on:
+  pull_request:
+  # Required for repos that use a merge queue: a queued PR is checked against a
+  # temporary "merge group" commit via a SEPARATE event. Without this trigger,
+  # the required check is never reported for the merge group and the merge
+  # stalls. No-op for repos without a merge queue. NOTE: ruleset "required
+  # workflows" only support pull_request / pull_request_target / merge_group;
+  # the push trigger below only runs in THIS source repo, not in target repos.
+  merge_group:
+  push:
+    # Establish/refresh the code-scanning baseline on the default branches.
+    # Adjust if some repos use a different default branch name.
+    branches: [main, master]
+  workflow_dispatch:
+
+# Least privilege by default: no token scopes unless a job opts in.
+permissions: {}
+
+# Serialize superseded runs for the same ref (also satisfies zizmor's own
+# concurrency-limits audit). NOTE: cancel-in-progress MUST stay false here.
+# When this workflow is enforced as a ruleset "required workflow", GitHub
+# requires that it does NOT use cancel-in-progress, otherwise a cancelled run
+# can leave the required check unreported and block merges.
+# See: Troubleshooting ruleset workflows > Concurrency.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  # --- Central, trusted source of the zizmor policy ---------------------------
+  # The config is fetched from this repo at an IMMUTABLE commit SHA. Never point
+  # this at a branch or tag: those are mutable and would let the policy change
+  # (or be tampered with) without an auditable, reviewed commit. Bump the SHA
+  # via PR whenever the central config changes (see .github/zizmor.md > For maintainers).
+  ZIZMOR_CONFIG_REPO: qualcomm/qcom-enterprise-workflows
+  ZIZMOR_CONFIG_REF: REPLACE_WITH_PINNED_COMMIT_SHA
+  ZIZMOR_CONFIG_PATH: .github/zizmor-enterprise-policy.yml
+
+jobs:
+  zizmor:
+    name: Scan workflows for security issues
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # upload SARIF to code scanning (Advanced Security)
+      contents: read         # clone the repo under audit (private/internal repos)
+      actions: read          # read workflow run metadata (private/internal repos)
+    steps:
+      - name: Checkout repository under audit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      # Fetch the trusted central policy from a pinned SHA. Because this is a
+      # separate checkout of the CENTRAL repo (not the PR), a malicious PR cannot
+      # influence the policy it is scanned against.
+      - name: Fetch central zizmor policy (pinned, trusted)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          repository: ${{ env.ZIZMOR_CONFIG_REPO }}
+          ref: ${{ env.ZIZMOR_CONFIG_REF }}
+          path: .zizmor-central
+          persist-credentials: false
+          sparse-checkout: ${{ env.ZIZMOR_CONFIG_PATH }}
+          sparse-checkout-cone-mode: false
+
+      # Fail closed: if the trusted config is missing/empty for any reason, do
+      # not silently fall back to zizmor's built-in defaults — stop the gate.
+      - name: Verify central policy is present
+        id: policy
+        run: |
+          set -euo pipefail
+          cfg=".zizmor-central/${ZIZMOR_CONFIG_PATH}"
+          if [ ! -s "$cfg" ]; then
+            echo "::error::Trusted zizmor config not found at ${cfg}. Failing closed." >&2
+            exit 1
+          fi
+          echo "config=${cfg}" >> "$GITHUB_OUTPUT"
+
+      # Decide whether we can upload to code scanning (GHAS) or must fall back
+      # to annotations. Two cases force the fallback:
+      #   1. Fork pull requests run with a READ-ONLY GITHUB_TOKEN, so the
+      #      security-events:write scope is downgraded and the SARIF upload
+      #      would fail with a permissions error.
+      #   2. The repository has no GitHub Advanced Security / code scanning
+      #      available (common for private repos without a GHAS license), so the
+      #      upload endpoint rejects the request.
+      - name: Determine reporting mode (code scanning vs annotations)
+        id: mode
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          ghas=true
+          reason=""
+
+          # Case 1: fork pull request -> read-only token.
+          if [ "${EVENT_NAME}" = "pull_request" ] && [ "${HEAD_REPO}" != "${BASE_REPO}" ]; then
+            ghas=false
+            reason="Pull request from a fork (${HEAD_REPO:-unknown}); fork PRs run with a read-only token and cannot upload to code scanning."
+          fi
+
+          # Case 2: code scanning / Advanced Security not available for this repo.
+          # Probe the alerts endpoint. A clear "Advanced Security must be enabled"
+          # style error means GHAS is off -> fall back. Any other error (e.g. a
+          # 404 because no analysis exists yet) is treated as available: the
+          # baseline simply hasn't been created, which the SARIF upload fixes.
+          if [ "${ghas}" = "true" ]; then
+            if err="$(gh api "repos/${BASE_REPO}/code-scanning/alerts?per_page=1" 2>&1 >/dev/null)"; then
+              : # HTTP 200 -> code scanning is available
+            elif printf '%s' "${err}" | grep -qiE 'advanced security|code scanning is not enabled|must be enabled'; then
+              ghas=false
+              reason="GitHub Advanced Security / code scanning is not enabled for ${BASE_REPO}."
+            fi
+          fi
+
+          echo "ghas=${ghas}" >> "${GITHUB_OUTPUT}"
+          echo "reason=${reason}" >> "${GITHUB_OUTPUT}"
+
+          if [ "${ghas}" = "true" ]; then
+            echo "::notice::zizmor results will be uploaded to GitHub code scanning."
+          else
+            echo "::notice::Code scanning unavailable -- falling back to annotations. ${reason}"
+          fi
+
+      # Primary path: upload SARIF to code scanning. With --format=sarif zizmor
+      # does NOT emit findings exit codes, so the step stays green; the enterprise
+      # ruleset is what blocks the merge on open alerts.
+      - name: Run zizmor (code scanning)
+        if: steps.mode.outputs.ghas == 'true'
+        uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
+        with:
+          # Passing an explicit config = zizmor "global discovery": any
+          # repo-local zizmor.yml in the PR is IGNORED. See .github/zizmor.md.
+          config: ${{ steps.policy.outputs.config }}
+          advanced-security: true
+          online-audits: true
+          persona: regular
+
+      # Fallback path: emit GitHub annotations instead of SARIF. Needs no special
+      # permissions, so it works on fork PRs and GHAS-less repos. This is advisory
+      # only (it cannot arm the merge gate), so continue-on-error keeps the run
+      # from going red on findings -- consistent with the code-scanning path,
+      # where blocking is delegated to the ruleset rather than the job status.
+      - name: Run zizmor (annotations fallback)
+        id: annotations
+        if: steps.mode.outputs.ghas != 'true'
+        continue-on-error: true
+        uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
+        with:
+          config: ${{ steps.policy.outputs.config }}
+          advanced-security: false
+          annotations: true
+          online-audits: true
+          persona: regular
+
+      # Explain the degraded run in the job summary so contributors and
+      # maintainers understand why there is no Security-tab entry for this run.
+      - name: Summarize advisory (annotations) run
+        if: steps.mode.outputs.ghas != 'true'
+        env:
+          REASON: ${{ steps.mode.outputs.reason }}
+          CONFIG_REPO: ${{ env.ZIZMOR_CONFIG_REPO }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Zizmor security scan — advisory mode"
+            echo
+            echo "Results were **not** uploaded to GitHub code scanning for this run."
+            echo
+            echo "**Reason:** ${REASON:-Code scanning was unavailable for this run.}"
+            echo
+            echo "### What this means"
+            echo
+            echo "- Findings (if any) are shown as **inline annotations** on this check run."
+            echo "- This run is **advisory only**: it does not block this pull request via the code-scanning merge gate."
+            echo "- Enforcement still applies on the base repository after merge (the push baseline) and through maintainer review."
+            echo
+            echo "### Where to see findings"
+            echo
+            echo "- See the annotations on this check, or the **Run zizmor (annotations fallback)** step log for the complete list."
+            echo "- GitHub renders at most **10 annotations per step**; any additional findings appear only in the step log."
+            echo
+            echo "See \`.github/zizmor.md\` in the central policy repo (\`${CONFIG_REPO}\`) for the full operating model."
+          } >> "${GITHUB_STEP_SUMMARY}"
