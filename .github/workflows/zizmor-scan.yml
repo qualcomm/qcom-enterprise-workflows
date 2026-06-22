@@ -155,7 +155,7 @@ jobs:
       # ruleset is what blocks the merge on open alerts.
       - name: Run zizmor (code scanning)
         if: steps.mode.outputs.ghas == 'true'
-        uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
         with:
           # Passing an explicit config = zizmor "global discovery": any
           # repo-local zizmor.yml in the PR is IGNORED. See .github/zizmor.md.
@@ -173,7 +173,7 @@ jobs:
         id: annotations
         if: steps.mode.outputs.ghas != 'true'
         continue-on-error: true
-        uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
+        uses: zizmorcore/zizmor-action@192e21d79ab29983730a13d1382995c2307fbcaa # v0.5.7
         with:
           config: ${{ steps.policy.outputs.config }}
           advanced-security: false
