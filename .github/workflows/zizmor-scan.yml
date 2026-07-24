@@ -196,7 +196,7 @@ jobs:
       - name: Upload results to code scanning (best-effort)
         if: steps.mode.outputs.ghas == 'true'
         continue-on-error: true
-        uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
+        uses: zizmorcore/zizmor-action@6fc4b006235f201fdab3722e17240ab420d580e5 # v0.6.1
         with:
           # Passing an explicit config = zizmor "global discovery": any
           # repo-local zizmor.yml in the PR is IGNORED. See .github/zizmor.md.
@@ -216,7 +216,7 @@ jobs:
       - name: Scan and enforce (gate)
         id: gate
         continue-on-error: ${{ env.ZIZMOR_FAIL_SEVERITY == 'never' }}
-        uses: zizmorcore/zizmor-action@5f14fd08f7cf1cb1609c1e344975f152c7ee938d # v0.5.6
+        uses: zizmorcore/zizmor-action@6fc4b006235f201fdab3722e17240ab420d580e5 # v0.6.1
         with:
           config: ${{ steps.policy.outputs.config }}
           advanced-security: false
