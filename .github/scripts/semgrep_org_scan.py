@@ -89,7 +89,7 @@ def org_token(integration: GithubIntegration, installation_id: int) -> str:
 def list_public_repos(gh: Github, org: str) -> list[dict]:
     repos = []
     for repo in gh.get_organization(org).get_repos(type="public"):
-        if repo.archived or repo.fork or repo.size == 0 or not repo.default_branch:
+        if repo.archived or repo.fork or repo.size == 0  or repo.custom_properties['is-semgrep-enabled']=='false' or not repo.default_branch:
             continue
         repos.append({"name": repo.name, "default_branch": repo.default_branch})
     return repos
