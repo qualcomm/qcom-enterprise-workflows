@@ -21,6 +21,8 @@ inline ignore). See *For maintainers* for the ruleset details.
   Security, all findings (all severities) are *also* uploaded to the **Security →
   Code scanning** tab; repos without it get annotations only. The run's job summary
   explains what happened for that run.
+- Repositories with no auditable GitHub Actions or Dependabot inputs pass this
+  check with a warning instead of failing.
 - This all works the same on **pull requests from forks**, Security-tab upload
   included: GitHub's code-scanning endpoint accepts SARIF from a fork PR's
   read-only token on `pull_request` runs, so no write token is required.

@@ -202,6 +202,7 @@ jobs:
           # repo-local zizmor.yml in the PR is IGNORED. See .github/zizmor.md.
           config: ${{ steps.policy.outputs.config }}
           advanced-security: true
+          fail-on-no-inputs: false
           online-audits: true
           persona: regular
 
@@ -221,6 +222,7 @@ jobs:
           config: ${{ steps.policy.outputs.config }}
           advanced-security: false
           annotations: true
+          fail-on-no-inputs: false
           min-severity: ${{ steps.mode.outputs.gate_min_severity }}
           online-audits: true
           persona: regular
