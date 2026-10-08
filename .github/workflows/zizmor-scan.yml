@@ -98,9 +98,19 @@ jobs:
       contents: read         # clone the repo under audit (private/internal repos)
       actions: read          # read workflow run metadata (private/internal repos)
     steps:
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.READ_ACCESS_APP_CLIENT_ID }}
+          private-key: ${{ secrets.READ_ACCESS_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-actions: read
+
       - name: Checkout repository under audit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
 
       # Fetch the trusted central policy from a pinned SHA. Because this is a
@@ -112,6 +122,7 @@ jobs:
           repository: ${{ env.ZIZMOR_CONFIG_REPO }}
           ref: ${{ env.ZIZMOR_CONFIG_REF }}
           path: .zizmor-central
+          token: ${{ steps.app-token.outputs.token }}
           persist-credentials: false
           sparse-checkout: ${{ env.ZIZMOR_CONFIG_PATH }}
           sparse-checkout-cone-mode: false
@@ -200,6 +211,7 @@ jobs:
         with:
           # Passing an explicit config = zizmor "global discovery": any
           # repo-local zizmor.yml in the PR is IGNORED. See .github/zizmor.md.
+          token: ${{ steps.app-token.outputs.token }}
           config: ${{ steps.policy.outputs.config }}
           advanced-security: true
           fail-on-no-inputs: false
@@ -219,6 +231,7 @@ jobs:
         continue-on-error: ${{ env.ZIZMOR_FAIL_SEVERITY == 'never' }}
         uses: zizmorcore/zizmor-action@70fb788f84895a7701f5643d103d587e460b5c99 # v0.6.3
         with:
+          token: ${{ steps.app-token.outputs.token }}
           config: ${{ steps.policy.outputs.config }}
           advanced-security: false
           annotations: true
